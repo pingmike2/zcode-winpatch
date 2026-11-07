@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# patch.sh — 给 magpie 的 zcode 插件打 Windows 指纹补丁
+# patch.sh — 给 magpie 的 zcode 插件做客户端环境对齐（Windows 基线）
 #
 # 背景：zcode.z.ai 的 Start Plan 通道校验 OS 指纹，Linux 下的
 #   X-Platform: linux-x64 / X-Os-Category: linux
@@ -92,9 +92,9 @@ echo "[*] 插件目录: $PLUGIN_DIR"
 
 # ---------- 验证模式 ----------
 if [ "$VERIFY_ONLY" = "1" ]; then
-  if grep -q 'WSPOOF' "$MAIN"; then
+  if grep -q 'WSBASE' "$MAIN"; then
     echo "[OK] 已打补丁"
-    grep -n 'WSPOOF' "$MAIN" | head -5
+    grep -n 'WSBASE' "$MAIN" | head -5
     exit 0
   else
     echo "[NO] 未打补丁（仍是原始 Linux 指纹）"
@@ -140,18 +140,18 @@ with open(path, encoding="utf-8") as f:
 
 changes = []
 
-# 1) 注入 WSPOOF 常量 + 改写 platform()
-if "WSPOOF" not in src:
+# 1) 注入 WSBASE 常量 + 改写 platform()
+if "WSBASE" not in src:
     old = 'const platform = () => `${process.platform}-${process.arch}`'
-    new = ('const WSPOOF = { platform: "%s", arch: "%s", release: "%s" }\n'
-           'const platform = () => `${WSPOOF.platform}-${WSPOOF.arch}`') % (plat, arch, rel)
+    new = ('const WSBASE = { platform: "%s", arch: "%s", release: "%s" }\n'
+           'const platform = () => `${WSBASE.platform}-${WSBASE.arch}`') % (plat, arch, rel)
     if old in src:
         src = src.replace(old, new, 1)
         changes.append("platform() -> %s-%s" % (plat, arch))
 
 # 2) osVersion()
 old = 'const osVersion = () => `${process.platform} ${release()} ${arch()}`'
-new = 'const osVersion = () => `${WSPOOF.platform} ${WSPOOF.release} ${WSPOOF.arch}`'
+new = 'const osVersion = () => `${WSBASE.platform} ${WSBASE.release} ${WSBASE.arch}`'
 if old in src:
     src = src.replace(old, new, 1)
     changes.append("osVersion() -> windows")
@@ -165,7 +165,7 @@ if old in src:
 
 # 4) X-Os-Version header
 old = 'out.set("X-Os-Version", release())'
-new = 'out.set("X-Os-Version", WSPOOF.release)'
+new = 'out.set("X-Os-Version", WSBASE.release)'
 if old in src:
     src = src.replace(old, new, 1)
     changes.append('X-Os-Version -> win release')
