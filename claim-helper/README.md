@@ -7,3 +7,11 @@ VPS 上常驻的网页：选账号 → 点领取 → 风控放行直接领（cod
 - 入口：监听全接口，公网 v6 直达 `http://[<VPS IPv6>]:12696/`（页面顶部会显示本机入口 ip:port）。临时隧道（`cloudflared tunnel --url "http://[::1]:12696" --edge-ip-version 6` + 本机纯 v6 时 SSH 转发必须绑 `[::1]:12696`）只是手机无 v6 网络时的备选，隧道地址随进程变化，重启换新即可。
 - 部署：脚本放 `/tmp/zcode-captcha-claim.mjs`（node 24 运行），unit 见 `zcode-claim-page.service`，`systemctl enable --now zcode-claim-page`。日志 `/tmp/zcode-claim-captcha.log`。
 - 响应码：0 成功 / 1003 已领 / 3007 需验证码 / 1004 条件不符；验证码 F 码：F008 重提、F014 超时、F019 窗口 90 秒、F015 交互不通过。
+
+## wb-activity.sh — WorkBuddy 国际版每日活跃（领积分）
+
+国际版签到活动长期未开（`checkin-activity-status` 返回 `active:false`），magpie 内置 checkin 因此一直报 inactive。实际生效的积分通道是**每日活跃被动发放**：`POST /v2/report` 发一条规范的 `chat_request_send` 事件，当天有活跃记录次日积分到账（+30/日）。
+
+- 零侵入：独立脚本读 `plugin-auth.json` 全部 `workbuddy-ai*` oauth 号，逐个上报 + 顺带查余额，凭证不落日志。
+- 部署：`/root/wb-activity.sh` + cron `17 9 * * *`；日志 `/root/wb-activity.log`。
+- 若官方日后开启签到活动，magpie 现有 `magpie accounts checkin` cron 会自动接手，本脚本不冲突（幂等，只补活跃）。
