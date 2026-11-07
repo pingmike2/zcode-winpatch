@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # patch.sh — 给 magpie 的 zcode 插件做客户端环境对齐（Windows 基线）
 #
-# 背景：zcode.z.ai 的 Start Plan 通道校验 OS 指纹，Linux 下的
+# 背景：zcode.z.ai 的 Start Plan 通道校验客户端平台标识，Linux 下的
 #   X-Platform: linux-x64 / X-Os-Category: linux
 # 会被判为异常请求，回 405 code 3012（账号级风控冷却，换 IP 无效）。
 # 本脚本把插件里的平台值改写成 Windows 11 的真值。
@@ -19,7 +19,7 @@ PLUGIN_DIR=""
 DRY_RUN=0
 VERIFY_ONLY=0
 
-# Windows 11 的指纹值
+# Windows 11 基线值
 WIN_PLATFORM="win32"
 WIN_ARCH="x64"
 WIN_RELEASE="10.0.22631"
@@ -97,7 +97,7 @@ if [ "$VERIFY_ONLY" = "1" ]; then
     grep -n 'WSBASE' "$MAIN" | head -5
     exit 0
   else
-    echo "[NO] 未打补丁（仍是原始 Linux 指纹）"
+    echo "[NO] 未打补丁（仍是原始 Linux 平台标识）"
     exit 1
   fi
 fi
