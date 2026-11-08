@@ -16,21 +16,36 @@ const BASE = 'https://www.workbuddy.ai';
 const DOMAIN = 'www.workbuddy.ai';
 const APP = '3.17.2';
 
-function readProxy() {
+// 按号代理: providers.json 里 workbuddy-ai.accountProxies[email] 优先,
+// 回退 settings.json 的全局 proxyCustom; 每号各自 curl -x, 与插件同出口 IP
+function readAccountProxies() {
+  const out = { global: '' };
   try {
     const s = JSON.parse(fs.readFileSync('/root/.config/magpie/settings.json', 'utf8'));
-    return s.proxyCustom || '';
-  } catch { return ''; }
+    out.global = s.proxyCustom || '';
+  } catch {}
+  try {
+    const p = JSON.parse(fs.readFileSync('/root/.config/magpie/providers.json', 'utf8'));
+    const wb = (p.providers || []).find(x => x.id === 'workbuddy-ai');
+    out.perAccount = wb?.accountProxies || {};
+  } catch (e) {
+    console.log(`providers.json unreadable, falling back to global proxy: ${String(e).slice(0, 80)}`);
+    out.perAccount = {};
+  }
+  return out;
 }
-const PROXY = readProxy();
-// curl 选项注入防护: 拒绝以 - 开头的配置值; 日志只记主机, 不记凭据
-const PROXY_SAFE = PROXY && !PROXY.startsWith('-') ? PROXY : '';
-const PROXY_ARG = PROXY_SAFE ? ['-x', PROXY_SAFE] : [];
-let proxyHost = '(direct)';
-if (PROXY_SAFE) {
-  try { proxyHost = new URL(PROXY_SAFE).host || '(masked)'; } catch { proxyHost = '(masked)'; }
+const PROXIES = readAccountProxies();
+// curl 选项注入防护: 拒绝以 - 开头的配置值
+function proxyFor(email) {
+  const raw = PROXIES.perAccount[email] || PROXIES.global || '';
+  if (typeof raw !== 'string' || !raw || raw.startsWith('-') || /[\r\n\0]/.test(raw)) return '';
+  return raw;
 }
-console.log(`proxy: ${proxyHost}`);
+function proxyHostOf(px) {
+  if (!px) return '(direct)';
+  try { return new URL(px).host || '(masked)'; } catch { return '(masked)'; }
+}
+console.log(`proxy: per-account from providers.json (fallback: global proxyCustom)`);
 
 function readAccounts() {
   let raw;
@@ -84,7 +99,8 @@ function chatRequestSendEvent(uid) {
 }
 
 function curlJson(url, a, body) {
-  const args = ['-s', '--max-time', '30', ...PROXY_ARG,
+  const px = proxyFor(a.email);
+  const args = ['-s', '--max-time', '30', ...(px ? ['-x', px] : []),
     '-X', 'POST', url, ...headers(a),
     '-d', typeof body === 'string' ? body : JSON.stringify(body)];
   const out = execFileSync('curl', args, { encoding: 'utf8', timeout: 35000 });
@@ -110,7 +126,7 @@ for (const a of accs) {
   try {
     const r = report(a);
     const bal = r.code === 0 ? balance(a) : '-';
-    console.log(`${a.email} report=${r.code}${r.msg && r.msg !== 'OK' ? ' ' + r.msg : ''} balance=[${bal}]`);
+    console.log(`${a.email} report=${r.code}${r.msg && r.msg !== 'OK' ? ' ' + r.msg : ''} via=${proxyHostOf(proxyFor(a.email))} balance=[${bal}]`);
     if (r.code === 0) ok++;
   } catch (e) {
     console.log(`${a.email} ERR ${String(e).slice(0, 120)}`);
