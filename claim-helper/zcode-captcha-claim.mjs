@@ -8,7 +8,22 @@ import fs from 'node:fs';
 
 const ZC = 'https://zcode.z.ai';
 const PORT = 12696;
-const DEFAULT_PLAN = process.env.ZCODE_PLAN || 'zcode-v3-start-plan-1106-wk';
+const FALLBACK_PLAN = process.env.ZCODE_PLAN || 'zcode-v3-start-plan-1109';
+
+// resolvePlan 动态拿当前活动套餐: 扫该账号的 marketing/touch banner(seq 0..5),
+// 取 claim_zcode_plan 的 plan_id; 扫不到回退 FALLBACK_PLAN
+async function resolvePlan(a) {
+  for (let seq = 0; seq <= 5; seq++) {
+    try {
+      const r = await fetch(`${ZC}/api/v1/marketing/touch?seq=${seq}`,
+        { headers: { Authorization: 'Bearer ' + a.jwt, ...marketingHeaders(a.device) } });
+      const d = await r.text();
+      const m = d.match(/"plan_id"\s*:\s*"([^"]+)"/);
+      if (m) return m[1];
+    } catch {}
+  }
+  return FALLBACK_PLAN;
+}
 const AUTH_PATH = '/root/.config/magpie/plugin-auth.json';
 
 function readAccounts() {
@@ -97,7 +112,7 @@ async function claimWith(verifyParam) {
   const q = new URLSearchParams(location.search);
   const r = await fetch('/claim', { method:'POST', headers:{'content-type':'application/json'},
     body: JSON.stringify({ acc: document.getElementById('acc').value,
-      plan_id: q.get('plan') || ${JSON.stringify(DEFAULT_PLAN)}, captchaVerifyParam: verifyParam })});
+      plan_id: q.get('plan') || '', captchaVerifyParam: verifyParam })});
   return r.json();
 }
 document.getElementById('go').onclick = async () => {
@@ -148,7 +163,9 @@ const server = http.createServer(async (req, res) => {
         const { acc, plan_id, captchaVerifyParam } = JSON.parse(body||'{}');
         const accs = readAccounts();
         const a = accs.find(x => x.id === acc) || accs[0];
-        const out = await doClaim(a, plan_id || DEFAULT_PLAN, captchaVerifyParam);
+        // plan_id 未显式指定时动态解析(套餐 ID 随活动期数变化, 写死会过期)
+        const pid = plan_id || await resolvePlan(a);
+        const out = await doClaim(a, pid, captchaVerifyParam);
         if (!captchaVerifyParam && out.code === 3007) return json({ need_captcha: true, code: out.code, msg: 'captcha verify failed' });
         return json({ ok: out.code === 0, code: out.code, http: out.http, raw: out.body });
       } catch (e) { return json({ ok: false, error: String(e) }); }
